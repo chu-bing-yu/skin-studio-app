@@ -270,55 +270,30 @@ try {
   check('点遮罩可关提示词', promptClosed);
   await sleep(280);
 
-  /* ---- 预览：真实 Roche 应用 ---- */
+  /* ---- 预览：NOIR 聊天应用示例（真实类名 + 真实样式） ---- */
   await tap(client, '.ss-composer .ss-icon-btn');
-  const pvReady = await waitFor(client, "!!document.querySelector('.ss-pv__frame--real')", 9000);
-  check('预览加载真实应用 iframe', pvReady);
+  const pvReady = await waitFor(client, "!!document.querySelector('.ss-pv__frame--scene')", 9000);
+  check('预览示例界面渲染', pvReady);
+  /* 5.4MB 真实样式是异步取的，等 srcdoc 真正落到 iframe 上 */
+  await waitFor(client, '(function(){var f=document.querySelector(".ss-pv__frame--scene");' +
+    'if(!f)return false;var s=f.getAttribute("srcdoc")||"";return s.length>1000;})()', 20000);
 
-  const realSrc = await client.evaluate("(document.querySelector('.ss-pv__frame--real')||{}).getAttribute ? document.querySelector('.ss-pv__frame--real').getAttribute('src') : ''");
-  check('iframe 指向内嵌真实应用', /assets\/roche\/index\.html/.test(String(realSrc)), realSrc);
-
-  /* 真实应用要解析 12MB 脚本；它还可能停在登录页，两种都算「真实界面已加载」 */
-  /* 真实应用会先过免责声明（父页面预置开关）→ 通行密钥（自动填）→ 首页/聊天页 */
-  const realState = await waitFor(client,
-    '(function(){var f=document.querySelector(".ss-pv__frame--real");if(!f)return "";' +
-    'try{var d=f.contentDocument;if(!d)return "";' +
-    'if(d.querySelector(".chat-viewport-root"))return "chat";' +
-    'if(d.querySelector(".dock-icon-btn"))return "app";' +
-    'var t=(d.body&&d.body.innerText||"");' +
-    'if(/免责|使用须知/.test(t))return "disclaimer";' +
-    'return /通行密钥|ROCHE ACCESS/.test(t)?"key":"";}catch(e){return "";}})()',
-    70000);
-  check('真实应用已进入（首页 / 聊天页）', realState === 'chat' || realState === 'app', realState);
-
-  if (realState === 'chat' || realState === 'app') {
-    /* 应用就绪后还要等一轮轮询 + 注入，别立刻断言 */
-    await waitFor(client, '(function(){var f=document.querySelector(".ss-pv__frame--real");' +
-      'try{return !!f.contentDocument.getElementById("ss-preview");}catch(e){return false;}})()', 15000);
-    const injected = await client.evaluate('(function(){var f=document.querySelector(".ss-pv__frame--real");' +
-      'try{var d=f.contentDocument;var s=d.getElementById("ss-preview");' +
-      'return JSON.stringify({has:!!s,count:d.querySelectorAll("#ss-preview").length,' +
-      'dock:d.querySelectorAll(".dock-icon-btn").length,' +
-      'log:(window.__ssInjectLog||[]).slice(-4),head:!!d.head});}catch(e){return "ERR:"+e.message;}})()');
-    let ij = {};
-    try { ij = JSON.parse(String(injected)); } catch (err) { ij = {}; }
-    check('真实页面里注入了一个 ss-preview', ij.has === true && Number(ij.count) === 1, injected);
-    /* 自动点进聊天 dock 后，页面可能是会话列表（此时底部 dock 已隐藏），两种都算正常 */
-    const navState = await client.evaluate('(function(){var f=document.querySelector(".ss-pv__frame--real");' +
-      'try{var d=f.contentDocument;var t=(d.body.innerText||"");' +
-      'return JSON.stringify({dock:d.querySelectorAll(".dock-icon-btn").length,' +
-      'chat:!!d.querySelector(".chat-viewport-root"),' +
-      'list:/No new threads|threads|消息|会话/i.test(t)});}catch(e){return "ERR:"+e.message;}})()');
-    let nj = {};
-    try { nj = JSON.parse(String(navState)); } catch (err) { nj = {}; }
-    check('已离开首页（进了聊天/会话页）',
-      Number(nj.dock) === 0 || nj.chat === true, navState);
-  } else {
-    check('未进入应用时如实标注', true, 'state=' + realState);
-  }
+  const srcInfo = await client.evaluate('(function(){var f=document.querySelector(".ss-pv__frame--scene");' +
+    'if(!f)return "";var s=f.getAttribute("srcdoc")||"";' +
+    'return JSON.stringify({len:s.length,noir:s.indexOf("NOIR")>-1,' +
+    'input:s.indexOf("chat-input-bar")>-1,bubble:s.indexOf("bubble-sent")>-1,' +
+    'nav:s.indexOf("dock-icon-btn")>-1});})()');
+  let si = {};
+  try { si = JSON.parse(String(srcInfo)); } catch (err) { si = {}; }
+  check('示例里是 NOIR 聊天应用', si.noir === true && si.input === true, srcInfo);
+  check('示例用了真实类名与底部导航', si.bubble === true && si.nav === true, srcInfo);
+  /* srcdoc 里只有真实样式（约 5.4MB）+ 示例 DOM，不含 10.9MB 应用本体 */
+  check('只注入样式，不内嵌整个应用',
+    Number(si.len) > 1000000 && Number(si.len) < 8000000,
+    Math.round(Number(si.len || 0) / 1024) + 'KB');
 
   const srcFlag = await client.evaluate('window.__ssPreviewSource||""');
-  check('来源标注正确', /真实应用/.test(String(srcFlag)), srcFlag);
+  check('来源标注为示例界面', /示例界面/.test(String(srcFlag)), srcFlag);
 
   const pvTabs = await client.evaluate("document.querySelectorAll('.ss-pv .ss-tab').length");
   check('预览四档', pvTabs === 4, pvTabs);

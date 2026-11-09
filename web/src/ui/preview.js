@@ -11,6 +11,9 @@ import { el, svgIcon } from './dom.js';
 import { htmlFor, TABS } from './scenes/index.js';
 import baselineCss from './scenes/baseline.css';
 
+/* 不再内嵌整个 Roche（10.9MB 会把 APK 撑到 15MB，且里面还带设置/世界书/动态等无关应用）。
+   预览改为「NOIR 聊天应用」的界面示例：真实类名 + 构建期抽出的真实样式。 */
+const USE_REAL_APP = false;
 const REAL_APP = './assets/roche/index.html';
 const DISCLAIMER_KEY = 'noir_disclaimer_agreed';
 const POLL = 400;
@@ -43,7 +46,7 @@ const sleep = (ms) => new Promise(function (r) { setTimeout(r, ms); });
 
 export function createPreview(store, actions) {
   let tab = 'chat';
-  let source = '真实应用';
+  let source = '示例界面';
   let booted = false;
   let chatEntered = false;
   let chatInChat = false;
@@ -296,6 +299,10 @@ export function createPreview(store, actions) {
   }
 
   async function renderFrame() {
+    if (!USE_REAL_APP) {
+      await showScene(tab === 'cards' ? '卡片陈列页' : '示例界面（真实样式）');
+      return;
+    }
     if (tab === 'cards') {
       await showScene('陈列页（手写）');
       return;
