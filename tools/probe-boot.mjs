@@ -146,23 +146,92 @@ try {
       console.log('BOOT OK in ' + ((Date.now() - started) / 1000).toFixed(1) + 's');
       break;
     }
-    /* 已经在首页（有 dock）但还没进会话：点第一条会话 */
+    /* 已经在首页（有 dock）但还没进会话：用几何特征找会话行并点开 */
     if (String(state).indexOf('"dock":4') > -1) {
-      const opened = await evaluate('(function(){' +
-        'var sels=["[class*=conversation-item]","[class*=conversation]","[class*=chat-item]","[data-conversation-id]"];' +
-        'for(var i=0;i<sels.length;i++){var el=document.querySelector(sels[i]);' +
-        'if(el){el.click();return "click:"+sels[i];}}' +
-        'return "no-row";})()');
-      if (opened) console.log('   open ->', opened);
-      if (!globalThis.__homeDumped) {
-        globalThis.__homeDumped = true;
+      if (!globalThis.__rowsDumped) {
+        globalThis.__rowsDumped = true;
         const rows = await evaluate('(function(){' +
-          'var out=[];var all=document.querySelectorAll("div,li,a");' +
-          'for(var i=0;i<all.length&&out.length<14;i++){var e=all[i];' +
-          'var c=(e.className&&e.className.toString())||"";' +
-          'if(/cursor-pointer|conversation|chat-|list-|rounded-\\[18px\\]/.test(c)&&(e.innerText||"").length>4){' +
-          'out.push(c.slice(0,90));}}return JSON.stringify(out);})()');
-        console.log('   HOME CLASSES ->', rows);
+          'var out=[];var all=document.querySelectorAll("div,li,a,button,section");' +
+          'var vw=window.innerWidth,vh=window.innerHeight;' +
+          'for(var i=0;i<all.length;i++){var e=all[i];' +
+          'var r=e.getBoundingClientRect();' +
+          'if(r.height<40||r.height>200||r.width<vw*0.5||r.top<0||r.bottom>vh-40)continue;' +
+          'var t=(e.innerText||"").trim().replace(/\\s+/g," ");' +
+          'if(!t||t.length>40)continue;' +
+          'var c=(e.className&&e.className.toString()||"").slice(0,60);' +
+          'out.push(e.tagName+" ["+c+"] top="+Math.round(r.top)+" h="+Math.round(r.height)+" w="+Math.round(r.width)+" :: "+t.slice(0,20));' +
+          'if(out.length>=10)break;}return JSON.stringify(out);})()');
+        console.log('   ROWS ->', rows);
+        /* 先看 4 个 dock 各自的文案/图标，判断哪个是消息 */
+        const dockInfo = await evaluate('(function(){' +
+          'var d=document.querySelectorAll(".dock-icon-btn");var out=[];' +
+          'for(var i=0;i<d.length;i++){var e=d[i];var r=e.getBoundingClientRect();' +
+          'out.push(i+" :: "+(e.getAttribute("aria-label")||"")+" | "+(e.getAttribute("title")||"")+' +
+          '" | "+(e.innerText||"").trim().slice(0,10)+" | x="+Math.round(r.left)+" y="+Math.round(r.top)+' +
+          '" | "+(e.className||"").slice(0,50));}' +
+          'return JSON.stringify(out);})()');
+        console.log('   DOCKS ->', dockInfo);
+
+        /* 首页有个可见的 Chat 图标：点它进会话列表，再点第一条会话 */
+        const tileClick = await evaluate('(function(){' +
+          'var all=document.querySelectorAll("*");var hits=[];' +
+          'for(var i=0;i<all.length;i++){var e=all[i];' +
+          'if(e.children.length>0)continue;' +
+          'var t=(e.textContent||"").trim();' +
+          'if(t!=="Chat")continue;' +
+          'var r=e.getBoundingClientRect();if(!r.width&&!r.height)continue;' +
+          'hits.push(e);}' +
+          'if(!hits.length)return "no-tile";' +
+          'var node=hits[0];' +
+          'for(var k=0;k<4&&node;k++){' +
+          'try{node.click();}catch(err){}' +
+          'if(document.querySelector(".chat-viewport-root"))return "clicked"+k;' +
+          'node=node.parentElement;}' +
+          'return "clicked-but-no-chat";})()');
+        console.log('   TILE ->', tileClick);
+
+        const labels = await evaluate('(function(){' +
+          'var out=[];var all=document.querySelectorAll("*");' +
+          'for(var i=0;i<all.length;i++){var e=all[i];' +
+          'if(e.children.length>0)continue;' +
+          'var t=(e.textContent||"").trim();if(!t||t.length>10)continue;' +
+          'var r=e.getBoundingClientRect();if(r.width<2||r.height<2)continue;' +
+          'out.push(t+" @"+Math.round(r.left+r.width/2)+","+Math.round(r.top+r.height/2));' +
+          'if(out.length>=24)break;}return JSON.stringify(out);})()');
+        console.log('   LABELS ->', labels);
+
+        /* 首页顶部有一条会话预览（“우린서로가있어”），点它看是否进聊天 */
+        const conv = await evaluate('(function(){' +
+          'var all=document.querySelectorAll("*");var hit=null;' +
+          'for(var i=0;i<all.length;i++){var e=all[i];' +
+          'if(e.children.length>0)continue;' +
+          'if((e.textContent||"").trim()!=="우린서로가있어")continue;hit=e;break;}' +
+          'if(!hit)return "no-conv";' +
+          'var n=hit;' +
+          'for(var k=0;k<4&&n;k++){try{n.click();}catch(err){}' +
+          'if(document.querySelector(".chat-viewport-root"))return "chat@"+k;n=n.parentElement;}' +
+          'return "no-chat";})()');
+        console.log('   CONV ->', conv);
+        await sleep(1200);
+        console.log('   AFTER CONV ->', await evaluate('(function(){return JSON.stringify({chat:!!document.querySelector(".chat-viewport-root"),msgs:document.querySelectorAll(".chat-message").length,text:(document.body.innerText||"").slice(0,50)});})()'));
+        await sleep(1200);
+        const listState = await evaluate('(function(){' +
+          'var t=(document.body.innerText||"").replace(/\\s+/g," ");' +
+          'return JSON.stringify({chat:!!document.querySelector(".chat-viewport-root"),text:t.slice(0,70)});})()');
+        console.log('   AFTER TILE ->', listState);
+
+        const rowClick = await evaluate('(function(){' +
+          'var all=document.querySelectorAll("div,li,a,button");' +
+          'var vw=window.innerWidth,vh=window.innerHeight;var best=null,bestTop=1e9;' +
+          'for(var i=0;i<all.length;i++){var e=all[i];var r=e.getBoundingClientRect();' +
+          'if(r.height<50||r.height>120||r.width<vw*0.6||r.top<70||r.bottom>vh-90)continue;' +
+          'if(!(e.innerText||"").trim())continue;' +
+          'if(r.top<bestTop){bestTop=r.top;best=e;}}' +
+          'if(!best)return "no-row";best.click();return "clicked-row@"+Math.round(bestTop);})()');
+        console.log('   ROW ->', rowClick);
+        await sleep(1400);
+        const chatState = await evaluate('(function(){return JSON.stringify({chat:!!document.querySelector(".chat-viewport-root"),msgs:document.querySelectorAll(".chat-message").length});})()');
+        console.log('   AFTER ROW ->', chatState);
       }
     }
     await sleep(500);

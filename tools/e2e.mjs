@@ -303,7 +303,16 @@ try {
     let ij = {};
     try { ij = JSON.parse(String(injected)); } catch (err) { ij = {}; }
     check('真实页面里注入了一个 ss-preview', ij.has === true && Number(ij.count) === 1, injected);
-    check('真实应用已渲染 dock/会话', Number(ij.dock) >= 1, injected);
+    /* 自动点进聊天 dock 后，页面可能是会话列表（此时底部 dock 已隐藏），两种都算正常 */
+    const navState = await client.evaluate('(function(){var f=document.querySelector(".ss-pv__frame--real");' +
+      'try{var d=f.contentDocument;var t=(d.body.innerText||"");' +
+      'return JSON.stringify({dock:d.querySelectorAll(".dock-icon-btn").length,' +
+      'chat:!!d.querySelector(".chat-viewport-root"),' +
+      'list:/No new threads|threads|消息|会话/i.test(t)});}catch(e){return "ERR:"+e.message;}})()');
+    let nj = {};
+    try { nj = JSON.parse(String(navState)); } catch (err) { nj = {}; }
+    check('已离开首页（进了聊天/会话页）',
+      Number(nj.dock) === 0 || nj.chat === true, navState);
   } else {
     check('未进入应用时如实标注', true, 'state=' + realState);
   }

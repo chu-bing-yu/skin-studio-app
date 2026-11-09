@@ -45,6 +45,8 @@ export function createPreview(store, actions) {
   let tab = 'chat';
   let source = '真实应用';
   let booted = false;
+  let chatEntered = false;
+  let chatInChat = false;
   let disposed = false;
   let skinTimer = null;
   let triedKey = false;
@@ -155,6 +157,64 @@ export function createPreview(store, actions) {
     return !!(d.querySelector('.dock-icon-btn') || d.querySelector('.chat-viewport-root'));
   }
 
+  /** 等某个选择器出现 */
+  async function waitForSel(sel, ms) {
+    const deadline = Date.now() + (ms || 5000);
+    while (Date.now() < deadline && !disposed) {
+      const d = doc();
+      if (d && d.querySelector(sel)) return true;
+      await sleep(250);
+    }
+    return false;
+  }
+
+  /**
+   * 进入聊天应用：
+   *   0=设置 1=世界书 2=聊天/会话 3=信息（实测 dock 顺序）
+   * 点第 3 个（下标 2）进会话列表；列表里有会话就点第一条进聊天页。
+   */
+  async function enterChat() {
+    const d = doc();
+    if (!d) return false;
+    if (d.querySelector('.chat-viewport-root')) return true;
+
+    const dock = d.querySelectorAll('.dock-icon-btn');
+    if (dock.length >= 3) {
+      try { dock[2].click(); } catch (err) { /* 忽略 */ }
+      await sleep(900);
+    }
+
+    if (doc() && doc().querySelector('.chat-viewport-root')) return true;
+
+    /* 会话列表里点第一条 */
+    try {
+      const cd = doc();
+      if (cd) {
+        const rows = Array.prototype.slice.call(cd.querySelectorAll('div,li,a,button'));
+        const vw = cd.defaultView.innerWidth;
+        const vh = cd.defaultView.innerHeight;
+        let best = null;
+        let bestTop = 1e9;
+        rows.forEach(function (el) {
+          const r = el.getBoundingClientRect();
+          if (r.height < 50 || r.height > 120) return;
+          if (r.width < vw * 0.6) return;
+          if (r.top < 70 || r.bottom > vh - 90) return;
+          if (!(el.innerText || '').trim()) return;
+          if (r.top < bestTop) { bestTop = r.top; best = el; }
+        });
+        if (best) {
+          best.click();
+          await sleep(900);
+        }
+      }
+    } catch (err) {
+      window.__ssInjectLog = (window.__ssInjectLog || []).concat('enterChat:' + (err && err.message));
+    }
+
+    return !!(doc() && doc().querySelector('.chat-viewport-root'));
+  }
+
   async function boot() {
     const deadline = Date.now() + ENTER_TIMEOUT;
     while (Date.now() < deadline && !disposed) {
@@ -239,8 +299,15 @@ export function createPreview(store, actions) {
       if (!realWrap.contains(hint)) realWrap.appendChild(hint);
     }
 
+    if (tab === 'chat' && !chatEntered) {
+      chatEntered = true;
+      const ok = await enterChat();
+      chatInChat = ok;
+      if (ok) await waitForSel('.chat-message', 4000);
+    }
+
     inject();
-    source = '真实应用';
+    source = chatInChat ? '真实应用 · 聊天' : '真实应用（已打开会话列表，可自行点进会话）';
     renderMeta();
   }
 
