@@ -60,13 +60,15 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        /* 把安全区高度交给页面：内容自己内缩，背景仍然铺满 */
+        /* 安全区只按「挖孔/刘海」算顶边：
+           系统栏已隐藏，但 systemBars 仍会回报状态栏高度，若拿它做 padding，
+           整块界面会被往下推一截（就是「全屏太靠下、顶上一条白带」的原因）。
+           底边仍取 systemBars，避免输入区压在手势条下面。 */
         ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { _, insets ->
-            val bars = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
-            )
-            safeTop = bars.top
-            safeBottom = bars.bottom
+            val cut = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+            val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            safeTop = cut.top
+            safeBottom = sys.bottom
             pushInsets()
             insets
         }
