@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no, interactive-widget=resizes-content" />
+  <meta name="theme-color" content="#ffffff" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Skin Studio</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #fff;
+      color: #1b1c1f;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC",
+        "Source Han Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none;
+    }
+    #app { height: 100%; }
+    #boot {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      color: #9ca3af;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      z-index: 9;
+      transition: opacity .2s;
+    }
+    #boot.gone { opacity: 0; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="boot">正在启动…</div>
+  <!-- 构建后 index.html 与 app.js 同级（dist/），直接双击 dist/index.html 也能跑 -->
+  <script src="./app.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+/* 设计令牌：白底 + 单一强调色，字号三档，圆角统一 */
+.ss-root {
+  --ss-bg: #ffffff;
+  --ss-soft: #f7f8fa;
+  --ss-chip: #f4f4f5;
+  --ss-line: #ecedef;
+  --ss-line-2: #dfe1e5;
+  --ss-ink: #1b1c1f;
+  --ss-ink-2: #4b5563;
+  --ss-muted: #9ca3af;
+  --ss-accent: #4d6bfe;
+  --ss-accent-soft: rgba(77, 107, 254, 0.08);
+  --ss-accent-line: rgba(77, 107, 254, 0.26);
+  --ss-danger: #c0392b;
+  --ss-ok: #0f9d58;
+
+  --ss-r-sm: 8px;
+  --ss-r-md: 12px;
+  --ss-r-lg: 16px;
+
+  --ss-fs-xs: 11px;
+  --ss-fs-sm: 12px;
+  --ss-fs-md: 13px;
+  --ss-fs-body: 14px;
+  --ss-fs-lg: 15px;
+
+  --ss-font: -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC",
+    "Source Han Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --ss-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace;
+
+  --ss-t: 180ms ease;
+  --ss-sidebar: 300px;
+}
