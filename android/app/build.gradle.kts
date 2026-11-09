@@ -52,8 +52,10 @@ android {
         jvmTarget = "17"
     }
 
+    /* 不再把 assets 设成不压缩：5.4MB 真实样式压进 APK 后能省 5MB 左右，
+       WebViewAssetLoader 读取压缩资源是透明的，不影响加载 */
     aaptOptions {
-        noCompress += listOf("html", "js", "css", "json")
+        noCompress += listOf("html")
     }
 }
 
