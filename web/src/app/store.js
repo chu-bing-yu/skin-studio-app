@@ -24,7 +24,9 @@ const DEFAULT_SETTINGS = {
   currency: '$',
   imageHost: defaultImageHost(),
   activeProjectId: '',
-  activeChannelId: ''
+  activeChannelId: '',
+  /* 预览用：真实应用的通行密钥（设置里填一次，只存在本机，不进代码库） */
+  rocheKey: ''
 };
 
 export async function createStore() {

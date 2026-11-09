@@ -1,63 +1,37 @@
 /**
- * 预览：优先用构建期快照（assets/scenes/*.html + roche.css），没有则用手写场景。
- * 只注入一个 <style id="ss-preview">。
+ * 预览：直接跑真实 Roche 应用（免登录版），在它上面注入当前方案的 CSS。
+ *
+ * 启动链：免责声明（localStorage 开关）→ 通行密钥 → 应用首页 / 聊天页
+ *   - 免责声明：同源，父页面先把 noir_disclaimer_agreed 置 true
+ *   - 通行密钥：检测到输入框就自动填入（KEY 可在设置里改）
+ *   - 皮肤：只维护一个 <style id="ss-preview">，每 1.5s 自检补插
+ * 卡片墙：真实应用没有「所有卡片一页」的界面，固定用手写陈列页。
  */
 import { el, svgIcon } from './dom.js';
 import { htmlFor, TABS } from './scenes/index.js';
 import baselineCss from './scenes/baseline.css';
 
-const SNAPSHOT_TABS = {
-  chat: 'chat',
-  cards: '',
-  interface: 'inbox',
-  offline: 'offline'
-};
+const REAL_APP = './assets/roche/index.html';
+const DISCLAIMER_KEY = 'noir_disclaimer_agreed';
+const POLL = 400;
+const ENTER_TIMEOUT = 60000;
 
-let rocheCssCache = null;
-let combinedCache = null;
+let sceneBaseCache = null;
 
-/**
- * 真实页面的全量样式（构建期从 roche.html 抽出，约 5.4MB）。
- * 只在第一次打开预览时加载，之后缓存在内存里；后续切档直接复用拼接结果。
- */
-async function loadRocheCss() {
-  if (rocheCssCache !== null) return rocheCssCache;
+async function loadSceneBase() {
+  if (sceneBaseCache !== null) return sceneBaseCache;
+  let real = '';
   try {
     const res = await fetch('./assets/scenes/roche.css');
-    rocheCssCache = res.ok ? await res.text() : '';
+    real = res.ok ? await res.text() : '';
   } catch (err) {
-    rocheCssCache = '';
-    console.warn('[preview] 真实样式加载失败，退回手写基线', err);
+    real = '';
   }
-  return rocheCssCache;
+  sceneBaseCache = real ? (baselineCss + '\n' + real) : baselineCss;
+  return sceneBaseCache;
 }
 
-async function loadBase() {
-  if (combinedCache !== null) return combinedCache;
-  const real = await loadRocheCss();
-  /* 先兜底基线，再真实样式：真实样式优先覆盖 */
-  combinedCache = real ? (baselineCss + '\n' + real) : baselineCss;
-  return combinedCache;
-}
-
-async function loadSnapshot(name) {
-  if (name === 'chat') {
-    const [html, css] = await Promise.all([
-      fetch('./assets/scenes/chat.html').then(function (r) { return r.ok ? r.text() : ''; }),
-      fetch('./assets/scenes/roche.css').then(function (r) { return r.ok ? r.text() : ''; })
-    ]);
-    if (!html) return null;
-    return { html: html, css: css };
-  }
-  const [html, css] = await Promise.all([
-    fetch('./assets/scenes/' + name + '.html').then(function (r) { return r.ok ? r.text() : ''; }),
-    fetch('./assets/scenes/roche.css').then(function (r) { return r.ok ? r.text() : ''; })
-  ]);
-  if (!html) return null;
-  return { html: html, css: css };
-}
-
-function composeHtml(html, baseCss, skinCss) {
+function composeScene(html, baseCss, skinCss) {
   return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
     + '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
     + '<style>' + (baseCss || '') + '</style>'
@@ -65,13 +39,41 @@ function composeHtml(html, baseCss, skinCss) {
     + '</head><body>' + html + '</body></html>';
 }
 
+const sleep = (ms) => new Promise(function (r) { setTimeout(r, ms); });
+
 export function createPreview(store, actions) {
   let tab = 'chat';
-  let source = '场景';
+  let source = '真实应用';
+  let booted = false;
+  let disposed = false;
+  let skinTimer = null;
+  let triedKey = false;
+
   const tabsEl = el('div', { class: 'ss-pv__tabs' });
   const stage = el('div', { class: 'ss-pv__stage' });
   const meta = el('div', { class: 'ss-pv__meta' });
-  const foot = el('div', { class: 'ss-pv__foot' });
+  const hint = el('div', { class: 'ss-pv__hint', text: '在预览里可以自己点进会话；皮肤一直注入着' });
+
+  /* 提前写好免责声明开关（与 iframe 同源） */
+  try { localStorage.setItem(DISCLAIMER_KEY, 'true'); } catch (err) { /* 忽略 */ }
+
+  const realFrame = el('iframe', {
+    class: 'ss-pv__frame ss-pv__frame--real',
+    src: REAL_APP,
+    sandbox: 'allow-scripts allow-same-origin'
+  });
+  const sceneFrame = el('iframe', { class: 'ss-pv__frame ss-pv__frame--scene', sandbox: 'allow-scripts allow-same-origin' });
+
+  /* 两个容器常驻、只切 display：
+     iframe 一旦被重新挂到 DOM 就会重新加载，注入的样式和登录态都会丢 */
+  const realWrap = el('div', { class: 'ss-device ss-device--real' });
+  const sceneWrap = el('div', { class: 'ss-device ss-device--scene', style: { display: 'none' } }, [sceneFrame]);
+  realWrap.appendChild(realFrame);
+
+  const loading = el('div', { class: 'ss-pv__loading' }, [
+    el('div', { text: '正在启动真实界面…' }),
+    el('div', { class: 'ss-pv__loading-sub', text: '首次约 3–15 秒（要解析 11MB 脚本），不是卡死' })
+  ]);
 
   function scopeOfTab() {
     const t = TABS.find(function (x) { return x.id === tab; });
@@ -82,75 +84,199 @@ export function createPreview(store, actions) {
     return store.buildScope(scopeOfTab()).css;
   }
 
+  function doc() {
+    try { return realFrame.contentDocument; } catch (err) { return null; }
+  }
+
+  /** 只维护一个 ss-preview；应用重建 head 时补回来 */
+  function inject(d) {
+    try {
+      const target = d || doc();
+      if (!target || !target.head) {
+        window.__ssInjectLog = (window.__ssInjectLog || []).concat('no-head:' + !!target);
+        return false;
+      }
+      let style = target.getElementById('ss-preview');
+      if (!style) {
+        style = target.createElement('style');
+        style.id = 'ss-preview';
+        target.head.appendChild(style);
+        window.__ssInjectLog = (window.__ssInjectLog || []).concat('created');
+      }
+      const css = skinCss();
+      if (style.textContent !== css) style.textContent = css;
+      return true;
+    } catch (err) {
+      window.__ssInjectLog = (window.__ssInjectLog || []).concat('ERR:' + (err && err.message));
+      return false;
+    }
+  }
+
+  function keyFromSettings() {
+    const s = store.state.settings || {};
+    return (s.rocheKey || '').trim();
+  }
+
+  /** 通行密钥页：填 key 并点进入 */
+  function tryPassKey() {
+    const d = doc();
+    if (!d || !d.body) return false;
+    const text = d.body.innerText || '';
+    if (!/通行密钥|ROCHE ACCESS|KEY/.test(text)) return false;
+    const key = keyFromSettings();
+    const input = d.querySelector('input');
+    if (!input) return false;
+    if (!key) {
+      /* 没配密钥：提示去设置里填，或直接在预览里输入 */
+      const sub = loading.querySelector('.ss-pv__loading-sub');
+      if (sub) sub.textContent = '需要通行密钥：可在「设置 → 预览」里填一次，或直接在这个页面输入';
+      return false;
+    }
+    if (triedKey && input.value === key) return true;
+    triedKey = true;
+    try {
+      const setter = Object.getOwnPropertyDescriptor(d.defaultView.HTMLInputElement.prototype, 'value').set;
+      setter.call(input, key);
+      input.dispatchEvent(new d.defaultView.Event('input', { bubbles: true }));
+      input.dispatchEvent(new d.defaultView.Event('change', { bubbles: true }));
+    } catch (err) {
+      input.value = key;
+    }
+    const btns = d.querySelectorAll('button, [role=button], a');
+    for (let i = 0; i < btns.length; i++) {
+      if (/进入|登录|解锁/.test((btns[i].innerText || '').trim())) { btns[i].click(); return true; }
+    }
+    return true;
+  }
+
+  function appReady() {
+    const d = doc();
+    if (!d) return false;
+    return !!(d.querySelector('.dock-icon-btn') || d.querySelector('.chat-viewport-root'));
+  }
+
+  async function boot() {
+    const deadline = Date.now() + ENTER_TIMEOUT;
+    while (Date.now() < deadline && !disposed) {
+      if (appReady()) {
+        booted = true;
+        await sleep(400);
+        inject();
+        startSkinLoop();
+        renderMeta();
+        return true;
+      }
+      if (tryPassKey()) {
+        const sub = loading.querySelector('.ss-pv__loading-sub');
+        if (sub) sub.textContent = '正在用通行密钥进入应用…';
+      }
+      await sleep(POLL);
+    }
+    return false;
+  }
+
+  function startSkinLoop() {
+    if (skinTimer) return;
+    skinTimer = setInterval(function () {
+      if (disposed) { clearInterval(skinTimer); skinTimer = null; return; }
+      if (!doc()) return;
+      inject();
+    }, 1500);
+  }
+
   function renderTabs() {
     tabsEl.replaceChildren();
     TABS.forEach(function (t) {
-      const btn = el('button', {
-        class: 'ss-tab' + (tab === t.id ? ' ss-tab--on' : ''),
-        text: t.label
-      });
+      const btn = el('button', { class: 'ss-tab' + (tab === t.id ? ' ss-tab--on' : ''), text: t.label });
       btn.addEventListener('click', function () {
         if (tab === t.id) return;
         tab = t.id;
         renderTabs();
-        renderFrame();
+        void renderFrame();
       });
       tabsEl.appendChild(btn);
     });
   }
 
+  function showRealPane() {
+    realWrap.style.display = '';
+    sceneWrap.style.display = 'none';
+  }
+
+  function showScenePane() {
+    realWrap.style.display = 'none';
+    sceneWrap.style.display = '';
+  }
+
+  async function showScene(reason) {
+    const base = await loadSceneBase();
+    if (disposed) return;
+    sceneFrame.setAttribute('srcdoc', composeScene(htmlFor(tab), base, skinCss()));
+    showScenePane();
+    source = reason;
+    renderMeta();
+  }
+
   async function renderFrame() {
-    const name = SNAPSHOT_TABS[tab];
-    let html = '';
-    source = '场景 + 真实样式';
-
-    /* 5.4MB CSS 解析前先给白底占位，避免黑屏 */
-    if (!combinedCache) {
-      stage.replaceChildren(el('div', { class: 'ss-pv__loading', text: '正在加载真实样式…' }));
+    if (tab === 'cards') {
+      await showScene('陈列页（手写）');
+      return;
     }
 
-    let base = await loadBase();
-    if (!rocheCssCache) source = '场景（样式加载失败）';
+    showRealPane();
 
-    if (name) {
-      const snap = await loadSnapshot(name);
-      if (snap) {
-        html = snap.html;
-        base = (snap.css || '') + '\n' + combinedCache;
-        source = '快照 + 真实样式';
+    if (!booted) {
+      if (!appReady()) {
+        if (!realWrap.contains(loading)) realWrap.appendChild(loading);
+        const ok = await boot();
+        if (!ok) {
+          await showScene('回退：场景（真实界面未就绪）');
+          return;
+        }
       }
+      booted = true;
+      if (loading.parentNode) loading.parentNode.removeChild(loading);
+      if (!realWrap.contains(hint)) realWrap.appendChild(hint);
     }
-    if (!html) html = htmlFor(tab);
 
-    const frame = el('iframe', {
-      class: 'ss-pv__frame',
-      srcdoc: composeHtml(html, base, skinCss()),
-      sandbox: 'allow-same-origin'
-    });
-    stage.replaceChildren(el('div', { class: 'ss-device' }, [frame]));
+    inject();
+    source = '真实应用';
+    renderMeta();
+  }
+
+  function renderMeta() {
+    const built = store.buildScope(scopeOfTab());
     meta.textContent = '预览来源：' + source + ' · ' + store.SCOPE_LABEL[scopeOfTab()]
-      + ' · ' + store.buildScope(scopeOfTab()).report.stats.branches + ' 个分支已注入';
+      + ' · ' + built.report.stats.branches + ' 个分支已注入';
+    window.__ssPreviewSource = source;
+    window.__ssPreviewBooted = booted;
   }
 
-  function renderFoot() {
-    foot.replaceChildren(
-      el('button', {
-        class: 'ss-btn ss-btn--ghost',
-        style: { flex: '1 1 0' },
-        text: '导出这份',
-        onclick: function () { actions.openExport(scopeOfTab()); }
-      }),
-      el('button', {
-        class: 'ss-btn ss-btn--ghost',
-        text: '刷新',
-        onclick: function () { renderFrame(); }
-      })
-    );
-  }
+  const foot = el('div', { class: 'ss-pv__foot' }, [
+    el('button', {
+      class: 'ss-btn ss-btn--ghost',
+      style: { flex: '1 1 0' },
+      text: '重新注入皮肤',
+      onclick: function () { inject(); renderMeta(); }
+    }),
+    el('button', {
+      class: 'ss-btn ss-btn--ghost',
+      style: { flex: '1 1 0' },
+      text: '导出这份',
+      onclick: function () { actions.openExport(scopeOfTab()); }
+    }),
+    el('button', {
+      class: 'ss-btn ss-btn--ghost',
+      text: '刷新',
+      onclick: function () { location.reload(); }
+    })
+  ]);
 
+  stage.appendChild(realWrap);
+  stage.appendChild(sceneWrap);
   renderTabs();
-  renderFrame();
-  renderFoot();
+  void renderFrame();
+  renderMeta();
 
   return el('div', { class: 'ss-pv' }, [
     el('div', { class: 'ss-screen__bar' }, [

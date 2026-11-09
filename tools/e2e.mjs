@@ -270,24 +270,46 @@ try {
   check('点遮罩可关提示词', promptClosed);
   await sleep(280);
 
-  /* ---- 预览：真实类名 ---- */
+  /* ---- 预览：真实 Roche 应用 ---- */
   await tap(client, '.ss-composer .ss-icon-btn');
-  const pvReady = await waitFor(client, "!!document.querySelector('.ss-pv__frame')", 9000);
-  check('预览 iframe 渲染', pvReady);
-  await sleep(600);
+  const pvReady = await waitFor(client, "!!document.querySelector('.ss-pv__frame--real')", 9000);
+  check('预览加载真实应用 iframe', pvReady);
 
-  /* 关键：srcdoc 里有 5.4MB CSS，绝不要把整串回传（跨 CDP 序列化会慢好几秒）。
-     在页面里判断，只返回几个布尔值和小数字。 */
-  const srcInfo = await client.evaluate('(function(){var f=document.querySelector(".ss-pv__frame");' +
-    'if(!f)return "";var s=f.getAttribute("srcdoc")||"";' +
-    'return JSON.stringify({len:s.length,' +
-    'input:s.indexOf("chat-input-bar")>-1,' +
-    'bubble:s.indexOf("bubble-sent")>-1,' +
-    'header:s.indexOf("chat-header__inner")>-1});})()');
-  let si = {};
-  try { si = JSON.parse(String(srcInfo)); } catch (err) { si = {}; }
-  check('预览用真实聊天类名', si.input === true && si.bubble === true && si.header === true, srcInfo);
-  check('预览注入了全量真实样式', Number(si.len) > 3000000, Math.round(Number(si.len || 0) / 1024) + 'KB');
+  const realSrc = await client.evaluate("(document.querySelector('.ss-pv__frame--real')||{}).getAttribute ? document.querySelector('.ss-pv__frame--real').getAttribute('src') : ''");
+  check('iframe 指向内嵌真实应用', /assets\/roche\/index\.html/.test(String(realSrc)), realSrc);
+
+  /* 真实应用要解析 12MB 脚本；它还可能停在登录页，两种都算「真实界面已加载」 */
+  /* 真实应用会先过免责声明（父页面预置开关）→ 通行密钥（自动填）→ 首页/聊天页 */
+  const realState = await waitFor(client,
+    '(function(){var f=document.querySelector(".ss-pv__frame--real");if(!f)return "";' +
+    'try{var d=f.contentDocument;if(!d)return "";' +
+    'if(d.querySelector(".chat-viewport-root"))return "chat";' +
+    'if(d.querySelector(".dock-icon-btn"))return "app";' +
+    'var t=(d.body&&d.body.innerText||"");' +
+    'if(/免责|使用须知/.test(t))return "disclaimer";' +
+    'return /通行密钥|ROCHE ACCESS/.test(t)?"key":"";}catch(e){return "";}})()',
+    70000);
+  check('真实应用已进入（首页 / 聊天页）', realState === 'chat' || realState === 'app', realState);
+
+  if (realState === 'chat' || realState === 'app') {
+    /* 应用就绪后还要等一轮轮询 + 注入，别立刻断言 */
+    await waitFor(client, '(function(){var f=document.querySelector(".ss-pv__frame--real");' +
+      'try{return !!f.contentDocument.getElementById("ss-preview");}catch(e){return false;}})()', 15000);
+    const injected = await client.evaluate('(function(){var f=document.querySelector(".ss-pv__frame--real");' +
+      'try{var d=f.contentDocument;var s=d.getElementById("ss-preview");' +
+      'return JSON.stringify({has:!!s,count:d.querySelectorAll("#ss-preview").length,' +
+      'dock:d.querySelectorAll(".dock-icon-btn").length,' +
+      'log:(window.__ssInjectLog||[]).slice(-4),head:!!d.head});}catch(e){return "ERR:"+e.message;}})()');
+    let ij = {};
+    try { ij = JSON.parse(String(injected)); } catch (err) { ij = {}; }
+    check('真实页面里注入了一个 ss-preview', ij.has === true && Number(ij.count) === 1, injected);
+    check('真实应用已渲染 dock/会话', Number(ij.dock) >= 1, injected);
+  } else {
+    check('未进入应用时如实标注', true, 'state=' + realState);
+  }
+
+  const srcFlag = await client.evaluate('window.__ssPreviewSource||""');
+  check('来源标注正确', /真实应用/.test(String(srcFlag)), srcFlag);
 
   const pvTabs = await client.evaluate("document.querySelectorAll('.ss-pv .ss-tab').length");
   check('预览四档', pvTabs === 4, pvTabs);

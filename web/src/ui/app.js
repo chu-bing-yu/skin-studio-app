@@ -903,6 +903,24 @@ export function mountApp(container, store) {
       body.appendChild(el('div', { class: 'ss-field' }, [input]));
     });
 
+    /* 预览用的通行密钥：只存本机，不写入代码库 */
+    body.appendChild(el('div', { class: 'ss-panel-note', text: '预览（真实应用）' }));
+    const keyInput = el('input', {
+      class: 'ss-field__input',
+      value: s.rocheKey || '',
+      placeholder: '通行密钥（第一次在预览页会要求输入）'
+    });
+    keyInput.addEventListener('change', function () {
+      s.rocheKey = keyInput.value.trim();
+      import('../data/db.js').then(function (db) { db.setKV('settings', s); });
+      toast(s.rocheKey ? '已保存通行密钥' : '已清空通行密钥');
+    });
+    body.appendChild(el('div', { class: 'ss-field' }, [keyInput]));
+    body.appendChild(el('div', {
+      class: 'ss-list__hint',
+      text: '填一次即可，预览会自动跳过免责声明并进入应用；也可以直接在预览页里输入'
+    }));
+
     body.appendChild(el('div', { class: 'ss-panel-note', text: '数据' }));
     const list = el('div', { class: 'ss-list' });
     list.appendChild(row('导入旧插件数据', '粘贴 skin-studio 导出的 JSON（ss.projects / branches）', el('button', {

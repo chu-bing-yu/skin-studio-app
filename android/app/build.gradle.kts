@@ -6,7 +6,7 @@ plugins {
 }
 
 /* 版本与签名：CI 通过环境变量注入，本地缺省也不影响编译 */
-val versionNameProp = (project.findProperty("versionName") as String?) ?: "1.1.1"
+val versionNameProp = (project.findProperty("versionName") as String?) ?: "1.2.0"
 val versionCodeProp = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toIntOrNull() ?: 1
 
 android {

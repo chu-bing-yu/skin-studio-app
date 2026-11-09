@@ -524,3 +524,58 @@
   color: var(--ss-muted);
   font-size: 12px;
 }
+
+/* ===== 预览：真实应用 iframe 与启动占位 ===== */
+.ss-pv__stage {
+  position: relative;
+}
+.ss-device {
+  position: relative;
+}
+.ss-pv__frame--real {
+  background: #fff;
+}
+.ss-pv__frame--scene {
+  background: #fff;
+}
+.ss-pv__loading {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: auto;
+  background: #fff;
+  color: var(--ss-ink-2);
+  font-size: 13px;
+  text-align: center;
+  padding: 0 24px;
+}
+.ss-pv__loading-sub {
+  font-size: 11px;
+  color: var(--ss-muted);
+  line-height: 1.6;
+}
+
+/* 预览：真实应用上方的小提示条 */
+.ss-pv__hint {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  max-width: 92%;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(17, 18, 20, 0.62);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  z-index: 4;
+}
