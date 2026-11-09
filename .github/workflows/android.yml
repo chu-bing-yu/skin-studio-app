@@ -17,6 +17,9 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install web deps (esbuild)
+        run: cd web && npm install --no-audit --no-fund
+
       - name: Build web (esbuild single file)
         run: cd web && node build.mjs
 
@@ -57,6 +60,11 @@ jobs:
           echo "KEY_ALIAS=${KEY_ALIAS:-skinstudio}" >> "$GITHUB_ENV"
 
       - uses: android-actions/setup-android@v3
+
+      - name: Install SDK platform & build-tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
