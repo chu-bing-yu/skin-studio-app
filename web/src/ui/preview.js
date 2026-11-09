@@ -90,6 +90,24 @@ export function createPreview(store, actions) {
     try { return realFrame.contentDocument; } catch (err) { return null; }
   }
 
+  /** 只留聊天入口：其余 dock（设置/世界书/信息）在预览里隐藏 */
+  function hideOtherDocks(d) {
+    try {
+      const dock = d.querySelectorAll('.dock-icon-btn');
+      if (dock.length !== 4) return;
+      let extra = d.getElementById('ss-preview-extra');
+      if (!extra) {
+        extra = d.createElement('style');
+        extra.id = 'ss-preview-extra';
+        d.head.appendChild(extra);
+      }
+      const css = '.dock-icon-btn:nth-child(1),.dock-icon-btn:nth-child(2),.dock-icon-btn:nth-child(4){display:none!important}';
+      if (extra.textContent !== css) extra.textContent = css;
+    } catch (err) {
+      window.__ssInjectLog = (window.__ssInjectLog || []).concat('hideDocks:' + (err && err.message));
+    }
+  }
+
   /** 只维护一个 ss-preview；应用重建 head 时补回来 */
   function inject(d) {
     try {
@@ -304,6 +322,7 @@ export function createPreview(store, actions) {
       const ok = await enterChat();
       chatInChat = ok;
       if (ok) await waitForSel('.chat-message', 4000);
+      hideOtherDocks(doc());
     }
 
     inject();
