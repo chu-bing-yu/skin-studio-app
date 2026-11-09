@@ -1,0 +1,25 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 气泡：圆角矩形 + 左下小尾巴（黑色细线） -->
+    <path
+        android:pathData="M42,40 H70 A9,9 0 0 1 79,49 V63 A9,9 0 0 1 70,72 H57 L47,80 L47,72 H42 A9,9 0 0 1 33,63 V49 A9,9 0 0 1 42,40 Z"
+        android:strokeColor="#1B1C1F"
+        android:strokeWidth="3.2"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+    <!-- 笔刷：斜向线条 + 圆润笔尖 -->
+    <path
+        android:pathData="M48,64 L66,46"
+        android:strokeColor="#1B1C1F"
+        android:strokeWidth="4.2"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M67.5,47.5 m-3.2,0 a3.2,3.2 0 1,0 6.4,0 a3.2,3.2 0 1,0 -6.4,0"
+        android:fillColor="#1B1C1F" />
+</vector>

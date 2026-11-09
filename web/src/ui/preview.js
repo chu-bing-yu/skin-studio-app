@@ -14,8 +14,12 @@ const SNAPSHOT_TABS = {
 };
 
 let rocheCssCache = null;
+let combinedCache = null;
 
-/** 真实页面的样式基线（构建期从 roche.html 抽出并裁剪），没有就只用兜底基线 */
+/**
+ * 真实页面的全量样式（构建期从 roche.html 抽出，约 5.4MB）。
+ * 只在第一次打开预览时加载，之后缓存在内存里；后续切档直接复用拼接结果。
+ */
 async function loadRocheCss() {
   if (rocheCssCache !== null) return rocheCssCache;
   try {
@@ -23,8 +27,17 @@ async function loadRocheCss() {
     rocheCssCache = res.ok ? await res.text() : '';
   } catch (err) {
     rocheCssCache = '';
+    console.warn('[preview] 真实样式加载失败，退回手写基线', err);
   }
   return rocheCssCache;
+}
+
+async function loadBase() {
+  if (combinedCache !== null) return combinedCache;
+  const real = await loadRocheCss();
+  /* 先兜底基线，再真实样式：真实样式优先覆盖 */
+  combinedCache = real ? (baselineCss + '\n' + real) : baselineCss;
+  return combinedCache;
 }
 
 async function loadSnapshot(name) {
@@ -89,22 +102,22 @@ export function createPreview(store, actions) {
   async function renderFrame() {
     const name = SNAPSHOT_TABS[tab];
     let html = '';
-    let base = baselineCss;
-    source = '场景';
+    source = '场景 + 真实样式';
 
-    const roche = await loadRocheCss();
-    if (roche) {
-      /* 先兜底基线，再真实样式：真实样式优先 */
-      base = baselineCss + '\n' + roche;
-      source = '场景 + 真实样式';
+    /* 5.4MB CSS 解析前先给白底占位，避免黑屏 */
+    if (!combinedCache) {
+      stage.replaceChildren(el('div', { class: 'ss-pv__loading', text: '正在加载真实样式…' }));
     }
+
+    let base = await loadBase();
+    if (!rocheCssCache) source = '场景（样式加载失败）';
 
     if (name) {
       const snap = await loadSnapshot(name);
       if (snap) {
         html = snap.html;
-        base = baselineCss + '\n' + (snap.css || roche || '');
-        source = '快照';
+        base = (snap.css || '') + '\n' + combinedCache;
+        source = '快照 + 真实样式';
       }
     }
     if (!html) html = htmlFor(tab);

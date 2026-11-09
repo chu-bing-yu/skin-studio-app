@@ -33,7 +33,7 @@ export function mountApp(container, store) {
       onclick: function () { openDrawer(); }
     }, [svgIcon('menu', 18)]),
     el('div', { class: 'ss-crumb' }, [crumbMain, crumbSub]),
-    el('button', { class: 'ss-icon-btn', title: '提示词', onclick: function () { openPage('prompt'); } }, [svgIcon('layers', 18)]),
+    el('button', { class: 'ss-icon-btn', title: '提示词', onclick: function () { openPrompt(); } }, [svgIcon('layers', 18)]),
     el('button', { class: 'ss-icon-btn', title: '导出', onclick: function () { openPage('export'); } }, [svgIcon('down', 18)]),
     el('button', { class: 'ss-icon-btn', title: '抽屉', onclick: function () { openDrawer(); } }, [svgIcon('dots', 18)])
   ]);
@@ -46,9 +46,10 @@ export function mountApp(container, store) {
   main.appendChild(composer);
   app.appendChild(main);
 
-  /* 左侧抽屉（卡片） */
+  /* 左侧抽屉（方案 + 对话树） / 右侧提示词抽屉 */
   const mask = el('div', { class: 'ss-mask' });
   const sideDrawer = el('div', { class: 'ss-side-drawer' });
+  const promptDrawer = el('div', { class: 'ss-drawer-right' });
   const screen = el('div', { class: 'ss-screen' });
   const toastEl = el('div', { class: 'ss-toast' });
   const pvWrap = el('div', { class: 'ss-screen ss-screen--pv' });
@@ -56,12 +57,14 @@ export function mountApp(container, store) {
   root.appendChild(app);
   root.appendChild(mask);
   root.appendChild(sideDrawer);
+  root.appendChild(promptDrawer);
   root.appendChild(screen);
   root.appendChild(pvWrap);
   root.appendChild(toastEl);
   container.appendChild(root);
 
   let drawerOpen = false;
+  let promptOpen = false;
   let pageName = '';
   let previewOpen = false;
   let toastTimer = null;
@@ -124,115 +127,110 @@ export function mountApp(container, store) {
     mask.classList.remove('ss-mask--in');
   }
 
-  function renderDrawer() {
-    clear(sideDrawer);
-    const written = Object.keys(state.project.branches).filter(function (id) {
+  function writtenCount() {
+    return Object.keys(state.project.branches).filter(function (id) {
       const b = state.project.branches[id];
       return b && b.css && b.css.trim();
     }).length;
-    const today = store.usageSummary('today');
-    const month = store.usageSummary('month');
+  }
 
-    const cards = [
-      {
-        id: 'architecture', title: '架构', desc: written + '/35 个分支有内容',
-        icon: 'layers'
-      },
-      {
-        id: 'api', title: 'API 预设', desc: (store.activeChannel() ? store.activeChannel().name : '未配置') + ' · ' + (store.activeChannel() ? store.activeChannel().model : ''),
-        icon: 'palette'
-      },
-      {
-        id: 'billing', title: 'Token 账单',
-        desc: '今日 ' + formatTokens(today.totalTokens) + ' · 本月 ' + formatTokens(month.totalTokens) + ' · ' + money(month.cost, state.settings.currency),
-        icon: 'down'
-      },
-      { id: 'prompt', title: '提示词', desc: store.promptResult().used.length + ' 段 · ' + formatBytes(store.promptResult().bytes), icon: 'edit' },
-      { id: 'settings', title: '设置', desc: '图床 / 主题 / 导入导出', icon: 'dots' }
-    ];
+  /** 对话树：宽屏侧栏与手机抽屉共用同一份，避免两套逻辑走偏 */
+  function buildTree(onSelect) {
+    const tree = el('div', { class: 'ss-side__tree' });
+    const branches = state.project.branches || {};
 
+    function row(node, depth) {
+      const kids = childrenOf(node.id);
+      const collapsed = (state.project.nodes[node.id] || {}).collapsed;
+      const active = state.activeNodeId === node.id;
+      const wrap = el('div');
+      const line = el('div', {
+        class: 'ss-tree__row'
+          + (active ? ' ss-tree__row--on' : '')
+          + (node.type === 'scope' ? ' ss-tree__row--scope' : '')
+          + (node.type === 'plan' ? ' ss-tree__row--plan' : ''),
+        style: { paddingLeft: (8 + depth * 14) + 'px' }
+      });
+
+      if (kids.length) {
+        const chev = el('button', {
+          class: 'ss-tree__chev' + (collapsed ? '' : ' ss-tree__chev--open'),
+          title: collapsed ? '展开' : '收起'
+        }, [svgIcon('chevron', 14)]);
+        chev.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          store.toggleCollapse(node.id);
+        });
+        line.appendChild(chev);
+      } else {
+        line.appendChild(el('span', { class: 'ss-tree__spacer' }));
+      }
+
+      line.appendChild(el('span', { class: 'ss-tree__label', text: node.label }));
+
+      if (node.type === 'branch') {
+        const b = branches[node.id] || {};
+        const n = lineCount(b.css);
+        if (n) line.appendChild(el('span', { class: 'ss-tree__badge', text: String(n) }));
+        if (b.enabled === false) {
+          line.appendChild(el('span', { class: 'ss-tree__dot', style: { background: 'var(--ss-line-2)' } }));
+        }
+      } else if (node.type === 'scope' || node.type === 'group') {
+        const ids = store.branchIdsOf(node.id) || [];
+        const done = ids.filter(function (id) {
+          const b = branches[id];
+          return b && b.css && b.css.trim();
+        }).length;
+        line.appendChild(el('span', { class: 'ss-tree__badge', text: done + '/' + ids.length }));
+      }
+
+      line.addEventListener('click', function () {
+        if (kids.length && collapsed) store.toggleCollapse(node.id);
+        store.switchNode(node.id);
+        if (onSelect) onSelect();
+      });
+      wrap.appendChild(line);
+
+      if (kids.length && !collapsed) {
+        kids.forEach(function (k) { wrap.appendChild(row(k, depth + 1)); });
+      }
+      return wrap;
+    }
+
+    childrenOf('root').forEach(function (n) { tree.appendChild(row(n, 0)); });
+    return tree;
+  }
+
+  function renderDrawer() {
+    clear(sideDrawer);
+
+    /* 顶部：方案切换（点开去方案页做新建/重命名/复制/删除） */
     sideDrawer.appendChild(el('div', { class: 'ss-side-drawer__head' }, [
-      el('div', { class: 'ss-side-drawer__title', text: '美化' }),
+      el('button', {
+        class: 'ss-proj-btn',
+        onclick: function () { closeDrawer(); openPage('projects'); }
+      }, [
+        el('div', { class: 'ss-proj-btn__main' }, [
+          el('div', { class: 'ss-proj-btn__name', text: state.project ? state.project.name : '' }),
+          el('div', {
+            class: 'ss-proj-btn__meta',
+            text: (state.projects.length || 1) + ' 个方案 · ' + writtenCount() + ' 个分支有内容'
+          })
+        ]),
+        el('span', { class: 'ss-proj-btn__chev' }, [svgIcon('chevron', 16)])
+      ]),
       el('button', { class: 'ss-icon-btn', onclick: closeDrawer }, [svgIcon('close', 18)])
     ]));
 
-    const list = el('div', { class: 'ss-menu-cards' });
-    cards.forEach(function (c) {
-      const row = el('button', { class: 'ss-menu-card' }, [
-        el('span', { class: 'ss-menu-card__icon' }, [svgIcon(c.icon, 20)]),
-        el('span', { class: 'ss-menu-card__main' }, [
-          el('span', { class: 'ss-menu-card__title', text: c.title }),
-          el('span', { class: 'ss-menu-card__desc', text: c.desc })
-        ]),
-        svgIcon('chevron', 16)
-      ]);
-      row.addEventListener('click', function () { closeDrawer(); openPage(c.id); });
-      list.appendChild(row);
-    });
-    sideDrawer.appendChild(list);
-
-    /* 方案切换 */
-    sideDrawer.appendChild(el('div', { class: 'ss-side-drawer__section', text: '美化方案' }));
-    const plist = el('div', { class: 'ss-proj-list' });
-    state.projects.forEach(function (p) {
-      const active = state.project && p.id === state.project.id;
-      const row = el('div', { class: 'ss-proj-item' + (active ? ' ss-proj-item--on' : '') }, [
-        el('button', { class: 'ss-proj-item__main' }, [
-          el('div', { class: 'ss-proj-item__name', text: p.name }),
-          el('div', {
-            class: 'ss-proj-item__meta',
-            text: Object.keys(p.branches || {}).filter(function (id) {
-              const b = p.branches[id];
-              return b && b.css && b.css.trim();
-            }).length + ' 个分支有内容'
-          })
-        ]),
-        active ? el('span', { class: 'ss-proj-item__tick', text: '✓' }) : null,
-        el('button', {
-          class: 'ss-mini-btn',
-          onclick: function () {
-            dialog({ title: '重命名方案', value: p.name }).then(function (name) {
-              if (name === null || !name.trim()) return;
-              store.renameProject(name, p.id).then(function () { renderDrawer(); });
-            });
-          }
-        }, [svgIcon('edit', 14)]),
-        el('button', {
-          class: 'ss-mini-btn',
-          onclick: function () { store.duplicateProject(p.id).then(function () { renderDrawer(); }); }
-        }, [svgIcon('copy', 14)]),
-        el('button', {
-          class: 'ss-mini-btn',
-          onclick: function () {
-            confirmBox('删除「' + p.name + '」？', '该方案的所有分支与对话都会被删除，无法恢复。').then(function (ok) {
-              if (ok) store.deleteProject(p.id).then(function () { renderDrawer(); });
-            });
-          }
-        }, [svgIcon('trash', 14)])
-      ]);
-      row.querySelector('.ss-proj-item__main').addEventListener('click', function () {
-        store.switchProject(p.id).then(function () { closeDrawer(); });
-      });
-      plist.appendChild(row);
-    });
-    sideDrawer.appendChild(plist);
+    /* 主体：对话树，点一下就进对话 */
+    sideDrawer.appendChild(buildTree(function () { closeDrawer(); }));
 
     sideDrawer.appendChild(el('div', { class: 'ss-side-drawer__foot' }, [
       el('button', {
-        class: 'ss-btn ss-btn--primary',
-        style: { flex: '1 1 0' },
-        text: '新建方案',
-        onclick: function () {
-          dialog({ title: '新方案名字', value: '美化 ' + (state.projects.length + 1) }).then(function (name) {
-            if (name === null) return;
-            store.createProject(name).then(function () { closeDrawer(); });
-          });
-        }
-      }),
-      el('button', {
         class: 'ss-btn ss-btn--ghost',
-        text: '复制当前',
-        onclick: function () { store.duplicateProject().then(function () { renderDrawer(); }); }
+        style: { flex: '1 1 0' },
+        text: '设置',
+        onclick: function () { closeDrawer(); openPage('settings'); }
       })
     ]));
   }
@@ -257,7 +255,31 @@ export function mountApp(container, store) {
   }, { passive: true });
   root.addEventListener('pointerup', function () { dragStart = null; }, { passive: true });
 
-  mask.addEventListener('click', function () { if (drawerOpen) closeDrawer(); });
+  mask.addEventListener('click', function () {
+    if (drawerOpen) closeDrawer();
+    if (promptOpen) closePrompt();
+  });
+
+  /* ---------------- 右侧提示词抽屉 ---------------- */
+
+  function openPrompt() {
+    promptOpen = true;
+    clear(promptDrawer);
+    const panel = pagePrompt();
+    /* 面板自身的返回按钮改成「关闭抽屉」 */
+    const bar = panel.querySelector('.ss-screen__bar');
+    if (bar && bar.firstChild) bar.firstChild.onclick = function () { closePrompt(); };
+    promptDrawer.appendChild(panel);
+    promptDrawer.classList.add('ss-drawer-right--in');
+    mask.classList.add('ss-mask--in');
+  }
+
+  function closePrompt() {
+    promptOpen = false;
+    promptDrawer.classList.remove('ss-drawer-right--in');
+    if (!drawerOpen && !pageName) mask.classList.remove('ss-mask--in');
+    setTimeout(function () { if (!promptOpen) clear(promptDrawer); }, 220);
+  }
 
   /* ---------------- 二级页 ---------------- */
 
@@ -292,6 +314,7 @@ export function mountApp(container, store) {
     if (name === 'billing') return pageBilling();
     if (name === 'prompt') return pagePrompt();
     if (name === 'settings') return pageSettings();
+    if (name === 'projects') return pageProjects();
     if (name === 'export') return pageExport('online');
     if (name === 'preview') return pagePreview();
     return pageShell(name, el('div', { class: 'ss-panel-note', text: '未知页面' }));
@@ -780,6 +803,33 @@ export function mountApp(container, store) {
       ]);
     }
 
+    /* 工具入口：从抽屉搬过来的四项 */
+    function entry(label, hint, target, onClick) {
+      const btn = el('button', { class: 'ss-entry' }, [
+        el('span', { class: 'ss-entry__main' }, [
+          el('span', { class: 'ss-entry__label', text: label }),
+          hint ? el('span', { class: 'ss-entry__hint', text: hint }) : null
+        ]),
+        svgIcon('chevron', 16)
+      ]);
+      btn.addEventListener('click', onClick || function () { openPage(target); });
+      return btn;
+    }
+
+    body.appendChild(el('div', { class: 'ss-panel-note', text: '工具' }));
+    const tools = el('div', { class: 'ss-entries' });
+    const written = writtenCount();
+    tools.appendChild(entry('架构', written + '/35 个分支有内容 · 数据流与开关', 'architecture'));
+    const ch = store.activeChannel();
+    tools.appendChild(entry('API 预设', (ch ? ch.name + ' · ' + ch.model : '未配置渠道'), 'api'));
+    const month = store.usageSummary('month');
+    tools.appendChild(entry('Token 账单', '本月 ' + formatTokens(month.totalTokens) + ' · ' + money(month.cost, state.settings.currency), 'billing'));
+    tools.appendChild(entry('提示词与预设', store.promptResult().used.length + ' 段 · ' + formatBytes(store.promptResult().bytes), '', function () {
+      closePage();
+      setTimeout(openPrompt, 120);
+    }));
+    body.appendChild(tools);
+
     body.appendChild(el('div', { class: 'ss-panel-note', text: '外观' }));
     const themes = el('div', { class: 'ss-seg' });
     [['light', '浅色'], ['dark', '深色'], ['system', '跟随系统']].forEach(function (pair) {
@@ -897,6 +947,81 @@ export function mountApp(container, store) {
     return pageShell('设置', body);
   }
 
+  /* ---------------- 方案页 ---------------- */
+
+  function pageProjects() {
+    const body = el('div', { class: 'ss-settings' });
+    const list = el('div', { class: 'ss-proj-list' });
+
+    state.projects.forEach(function (p) {
+      const active = state.project && p.id === state.project.id;
+      const row = el('div', { class: 'ss-proj-item' + (active ? ' ss-proj-item--on' : '') }, [
+        el('button', { class: 'ss-proj-item__main' }, [
+          el('div', { class: 'ss-proj-item__name', text: p.name }),
+          el('div', {
+            class: 'ss-proj-item__meta',
+            text: Object.keys(p.branches || {}).filter(function (id) {
+              const b = p.branches[id];
+              return b && b.css && b.css.trim();
+            }).length + ' 个分支有内容'
+          })
+        ]),
+        active ? el('span', { class: 'ss-proj-item__tick', text: '✓' }) : null,
+        el('button', {
+          class: 'ss-mini-btn',
+          title: '重命名',
+          onclick: function () {
+            dialog({ title: '重命名方案', value: p.name }).then(function (name) {
+              if (name === null || !name.trim()) return;
+              store.renameProject(name, p.id).then(function () { openPage('projects'); });
+            });
+          }
+        }, [svgIcon('edit', 14)]),
+        el('button', {
+          class: 'ss-mini-btn',
+          title: '复制',
+          onclick: function () { store.duplicateProject(p.id).then(function () { openPage('projects'); }); }
+        }, [svgIcon('copy', 14)]),
+        el('button', {
+          class: 'ss-mini-btn',
+          title: '删除',
+          onclick: function () {
+            confirmBox('删除「' + p.name + '」？', '该方案的所有分支与对话都会被删除，无法恢复。').then(function (ok) {
+              if (ok) store.deleteProject(p.id).then(function () { openPage('projects'); });
+            });
+          }
+        }, [svgIcon('trash', 14)])
+      ]);
+      row.querySelector('.ss-proj-item__main').addEventListener('click', function () {
+        store.switchProject(p.id).then(function () {
+          closePage();
+          setTimeout(openDrawer, 120);
+        });
+      });
+      list.appendChild(row);
+    });
+
+    body.appendChild(list);
+    body.appendChild(el('div', { class: 'ss-row-actions' }, [
+      el('button', {
+        class: 'ss-btn ss-btn--primary',
+        style: { flex: '1 1 0' },
+        text: '新建方案',
+        onclick: function () {
+          dialog({ title: '新方案名字', value: '美化 ' + (state.projects.length + 1) }).then(function (name) {
+            if (name === null) return;
+            store.createProject(name).then(function () {
+              toast('已新建方案');
+              openPage('projects');
+            });
+          });
+        }
+      })
+    ]));
+
+    return pageShell('美化方案', body);
+  }
+
   /* ---------------- 导出页 ---------------- */
 
   function pageExport(scope) {
@@ -1012,39 +1137,10 @@ export function mountApp(container, store) {
       ])
     ]));
 
-    const tree = el('div', { class: 'ss-side__tree' });
-    function row(node, depth) {
-      const kids = childrenOf(node.id);
-      const collapsed = (state.project.nodes[node.id] || {}).collapsed;
-      const active = state.activeNodeId === node.id;
-      const wrap = el('div');
-      const line = el('div', {
-        class: 'ss-tree__row' + (active ? ' ss-tree__row--on' : '') + (node.type === 'scope' ? ' ss-tree__row--scope' : ''),
-        style: { paddingLeft: (8 + depth * 14) + 'px' }
-      });
-      if (kids.length) {
-        const chev = el('button', { class: 'ss-tree__chev' + (collapsed ? '' : ' ss-tree__chev--open') }, [svgIcon('chevron', 14)]);
-        chev.addEventListener('click', function (ev) { ev.stopPropagation(); store.toggleCollapse(node.id); });
-        line.appendChild(chev);
-      } else {
-        line.appendChild(el('span', { class: 'ss-tree__spacer' }));
-      }
-      line.appendChild(el('span', { class: 'ss-tree__label', text: node.label }));
-      if (node.type === 'branch') {
-        const b = state.project.branches[node.id] || {};
-        const n = lineCount(b.css);
-        if (n) line.appendChild(el('span', { class: 'ss-tree__badge', text: String(n) }));
-      }
-      line.addEventListener('click', function () { store.switchNode(node.id); });
-      wrap.appendChild(line);
-      if (kids.length && !collapsed) kids.forEach(function (k) { wrap.appendChild(row(k, depth + 1)); });
-      return wrap;
-    }
-    childrenOf('root').forEach(function (n) { tree.appendChild(row(n, 0)); });
-    side.appendChild(tree);
+    side.appendChild(buildTree());
 
     side.appendChild(el('div', { class: 'ss-side__foot' }, [
-      el('button', { class: 'ss-btn ss-btn--ghost', style: { flex: '1 1 0' }, text: '预览', onclick: function () { pagePreview(); } }),
+      el('button', { class: 'ss-btn ss-btn--ghost', style: { flex: '1 1 0' }, text: '提示词', onclick: function () { openPrompt(); } }),
       el('button', { class: 'ss-btn ss-btn--ghost', style: { flex: '1 1 0' }, text: '设置', onclick: function () { openPage('settings'); } })
     ]));
     return side;
@@ -1324,6 +1420,11 @@ export function mountApp(container, store) {
   /* 指定页面渲染（避免整页重建） */
   const originalOpenPage = openPage;
   openPage = function (name) {
+    if (name === 'prompt') {
+      /* 面板内部的刷新也走抽屉，避免又出现一个全屏页 */
+      openPrompt();
+      return;
+    }
     if (name === 'promptFull') {
       pageName = 'promptFull';
       clear(screen);
@@ -1358,6 +1459,7 @@ export function mountApp(container, store) {
     openPage: function (n) { openPage(n); },
     goBack: function () {
       if (previewOpen) { closePreview(); return true; }
+      if (promptOpen) { closePrompt(); return true; }
       if (pageName) { closePage(); return true; }
       if (drawerOpen) { closeDrawer(); return true; }
       return false;

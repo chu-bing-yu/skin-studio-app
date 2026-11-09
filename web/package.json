@@ -1,7 +1,7 @@
 {
   "name": "skin-studio-app",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "Skin Studio · 独立美化工作台（纯前端 + Android WebView 壳）",
   "scripts": {

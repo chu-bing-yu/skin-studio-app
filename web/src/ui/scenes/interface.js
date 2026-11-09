@@ -61,11 +61,11 @@ export const INTERFACE_HTML = `
     </div>
 
     <nav class="bottom-nav">
-      <span class="tab-item">⌂</span>
-      <span class="tab-item tab-item--on">✉</span>
+      <span class="dock-icon-btn tab-item">⌂</span>
+      <span class="dock-icon-btn nav-icon-active tab-item tab-item--on">✉</span>
       <span class="tab-item tab-item--plus">+</span>
-      <span class="tab-item">♡</span>
-      <span class="tab-item">☺</span>
+      <span class="dock-icon-btn tab-item">♡</span>
+      <span class="dock-icon-btn tab-item">☺</span>
     </nav>
   </section>
 
@@ -87,10 +87,10 @@ export const INTERFACE_HTML = `
           </div>
           <div class="post-body">子夜风露重，某人白日里睡足了，这会儿倒精神得很。</div>
           <div class="post-actions">
-            <span class="post-action-unit">♡ <i>48</i></span>
-            <span class="post-action-unit">◌ <i>15</i></span>
-            <span class="post-action-unit">⇄ <i>3</i></span>
-            <span class="post-action-unit">➤</span>
+            <span class="post-action-btn post-action-unit">♡ <i>48</i></span>
+            <span class="post-action-btn post-action-unit">◌ <i>15</i></span>
+            <span class="post-action-btn post-action-unit">⇄ <i>3</i></span>
+            <span class="post-action-btn post-action-unit">➤</span>
           </div>
         </div>
       </article>
@@ -104,9 +104,9 @@ export const INTERFACE_HTML = `
           </div>
           <div class="post-body">炉火未熄，阶前晴雪初融。有人午正方醒，今日的课业便纵你躲过半日。</div>
           <div class="post-actions">
-            <span class="post-action-unit">♡ <i>17</i></span>
-            <span class="post-action-unit">◌ <i>13</i></span>
-            <span class="post-action-unit">⇄ <i>3</i></span>
+            <span class="post-action-btn post-action-unit">♡ <i>17</i></span>
+            <span class="post-action-btn post-action-unit">◌ <i>13</i></span>
+            <span class="post-action-btn post-action-unit">⇄ <i>3</i></span>
           </div>
         </div>
       </article>
@@ -120,19 +120,19 @@ export const INTERFACE_HTML = `
           </div>
           <div class="post-body">露台的灯熄了，窗外的潮声很平缓。……晚安。</div>
           <div class="post-actions">
-            <span class="post-action-unit">♡ <i>9</i></span>
-            <span class="post-action-unit">◌ <i>2</i></span>
+            <span class="post-action-btn post-action-unit">♡ <i>9</i></span>
+            <span class="post-action-btn post-action-unit">◌ <i>2</i></span>
           </div>
         </div>
       </article>
     </div>
 
     <nav class="bottom-nav">
-      <span class="tab-item tab-item--on">⌂</span>
-      <span class="tab-item">✉</span>
+      <span class="dock-icon-btn nav-icon-active tab-item tab-item--on">⌂</span>
+      <span class="dock-icon-btn tab-item">✉</span>
       <span class="tab-item tab-item--plus">+</span>
-      <span class="tab-item">♡</span>
-      <span class="tab-item">☺</span>
+      <span class="dock-icon-btn tab-item">♡</span>
+      <span class="dock-icon-btn tab-item">☺</span>
     </nav>
   </section>
 

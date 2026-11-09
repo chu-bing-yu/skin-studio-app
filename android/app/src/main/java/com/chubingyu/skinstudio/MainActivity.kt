@@ -3,17 +3,20 @@ package com.chubingyu.skinstudio
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.WindowManager
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
+import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.ComponentActivity
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -24,6 +27,9 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var webView: WebView
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    /* 安全区：隐藏系统栏后内容会顶到挖孔下面，把 insets 交给页面自己内缩 */
+    private var safeTop = 0
+    private var safeBottom = 0
     private val assetLoader by lazy {
         WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
@@ -46,6 +52,24 @@ class MainActivity : ComponentActivity() {
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         controller.hide(WindowInsetsCompat.Type.systemBars())
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+        /* 关键：不设 shortEdges，挖孔/刘海区域不会铺开，顶部会留一条白边 */
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+
+        /* 把安全区高度交给页面：内容自己内缩，背景仍然铺满 */
+        ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { _, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            safeTop = bars.top
+            safeBottom = bars.bottom
+            pushInsets()
+            insets
+        }
 
         webView = WebView(this)
         webView.setBackgroundColor(0xFFFFFFFF.toInt())
@@ -79,6 +103,12 @@ class MainActivity : ComponentActivity() {
                 } catch (e: Exception) {
                     true
                 }
+            }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                super.onPageFinished(view, url)
+                /* 页面刷新后 CSS 变量会丢，重新推一次 */
+                pushInsets()
             }
         }
 
@@ -119,10 +149,20 @@ class MainActivity : ComponentActivity() {
         })
     }
 
+    /** 把安全区写成 CSS 变量，页面据此内缩顶栏与输入区 */
+    private fun pushInsets() {
+        val wv = if (::webView.isInitialized) webView else return
+        val js = "(function(){var r=document.documentElement;if(!r)return;" +
+            "r.style.setProperty('--ss-safe-top','${safeTop}px');" +
+            "r.style.setProperty('--ss-safe-bottom','${safeBottom}px');})()"
+        wv.post { wv.evaluateJavascript(js, null) }
+    }
+
     override fun onResume() {
         super.onResume()
         WindowInsetsControllerCompat(window, window.decorView).hide(WindowInsetsCompat.Type.systemBars())
         webView.onResume()
+        pushInsets()
     }
 
     override fun onPause() {

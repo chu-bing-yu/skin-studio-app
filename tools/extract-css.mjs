@@ -79,11 +79,15 @@ if (!blocks.length) {
 }
 
 const raw = blocks.join('\n\n');
-const trimmed = prune(raw);
+/* 默认全量输出：Tailwind 工具类（flex / px-4 / bg-bubble-sent）才是 Roche 真正的排版来源，
+   之前按组件关键词过滤把它们全滤掉了，预览才会「完全不一样」。
+   需要瘦身时加 --prune（会丢工具类，仅在排查体积时用）。 */
+const wantPrune = process.argv.indexOf('--prune') > -1;
+const out = wantPrune ? prune(raw) : raw;
 
 await mkdir(OUT_DIR, { recursive: true });
-await writeFile(join(OUT_DIR, 'roche.css'), trimmed);
+await writeFile(join(OUT_DIR, 'roche.css'), out);
 
-console.log('源样式 ' + (Buffer.byteLength(raw) / 1024).toFixed(0) + ' KB → 裁剪后 '
-  + (Buffer.byteLength(trimmed) / 1024).toFixed(0) + ' KB');
+console.log('源样式 ' + (Buffer.byteLength(raw) / 1024).toFixed(0) + ' KB → 输出 '
+  + (Buffer.byteLength(out) / 1024).toFixed(0) + ' KB' + (wantPrune ? '（已裁剪）' : '（全量）'));
 console.log('写入 ' + join(OUT_DIR, 'roche.css'));
